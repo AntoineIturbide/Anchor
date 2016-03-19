@@ -83,7 +83,7 @@ namespace Controller {
                 );
             physic.i_WR = Vector2.ClampMagnitude(physic.i_WR, 1f);
             // State
-            physic.i_WRState = Input.GetKey(KeyCode.LeftShift);
+            physic.i_WRState = !Input.GetKey(KeyCode.LeftShift);
 
             /** Retrieve jump input **/
             if (Input.GetKeyDown(KeyCode.Space)) {
