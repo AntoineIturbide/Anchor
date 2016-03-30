@@ -4,6 +4,15 @@ using System.Collections;
 namespace Controller {
     [RequireComponent(typeof(CharacterController))]
     public class Character : MonoBehaviour {
+        /** REFERENCES **/
+        // Ability
+        [System.Serializable]
+        public class References {
+            public CoreAbility coreAbility;
+        }
+        public References references;
+        private References r { get { return references; } }
+
         /** CONFIGURATION **/
         // Camera
         [System.Serializable]
@@ -57,6 +66,15 @@ namespace Controller {
         }
         public Physic physic = new Physic();
 
+        public void CatchedByStasis() {
+            physic.v_gravity = Vector3.zero;
+            physic.v_jump = Vector3.zero;
+        }
+
+        public void EjectFromStasis() {
+
+        }
+
         /** UNITY **/   
         // Constructor
         public void Awake() {
@@ -68,7 +86,10 @@ namespace Controller {
         }
 
         // Input Update
-        private void Update() { InputUpdate(); }
+        private void Update() {
+            InputUpdate();
+            r.coreAbility.InputUpdate();
+        }
         private void InputUpdate() {
             /** DEBUG **/
             if(Input.GetKeyDown(KeyCode.Escape)) {
@@ -83,7 +104,7 @@ namespace Controller {
                 );
             physic.i_WR = Vector2.ClampMagnitude(physic.i_WR, 1f);
             // State
-            physic.i_WRState = !Input.GetKey(KeyCode.LeftShift);
+            physic.i_WRState = !    Input.GetKey(KeyCode.LeftShift);
 
             /** Retrieve jump input **/
             if (Input.GetKeyDown(KeyCode.Space)) {
@@ -195,8 +216,6 @@ namespace Controller {
                 return;
             }
             camera.transform.position = transform.position + transform.rotation * Quaternion.Euler(-playerCamera.rotationY, 0,0) * cameraConfiguration.offset;
-            //camera.transform.rotation = transform.localRotation;
-            //transform.localEulerAngles = new Vector3(0, rotationX, 0);
             camera.transform.localEulerAngles = new Vector3(-playerCamera.rotationY, 0, 0);
         }
 
