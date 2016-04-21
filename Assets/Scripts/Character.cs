@@ -4,12 +4,22 @@ using System.Collections;
 namespace Controller {
     [RequireComponent(typeof(CharacterController))]
     public class Character : MonoBehaviour {
+        /** REFERENCES **/
+        // Ability
+        [System.Serializable]
+        public class References {
+            public CoreAbility coreAbility;
+        }
+        public References references;
+        private References r { get { return references; } }
+
         /** CONFIGURATION **/
         // Camera
         [System.Serializable]
         public class CameraConfiguration {
             public GameObject target;
-            public Vector3 offset;
+            public Vector3 offsetRight;
+            public Vector3 offsetLeft;
             public float minimumY = -60F;
             public float maximumY = 60F;
             public float sensitivityX = 15F;
@@ -26,12 +36,16 @@ namespace Controller {
             public float walkRunTransitionDelay;
             public float walkRunStopDelay = 1f;
             public float jumpStrength = 5f;
+            public int jumpCount = 1;
+            public Vector3 gravity = new Vector3(0, -9.81f, 0);
         }
         public DisplacementConfiguration displacementConfiguration;
 
         /** CAMERA **/
         public class PlayerCamera {
             public float rotationY = 0F;
+            public float slider = 0f;
+            public bool isOnRightSide = false;
         }
         private PlayerCamera playerCamera = new PlayerCamera();
 
@@ -52,14 +66,64 @@ namespace Controller {
             public Vector2 v_WR;        // Walk/Run velocity
             public Vector3 a_gravity = new Vector3(0, -9.81f, 0);
             public Vector3 v_gravity = Vector3.zero;
-            public Vector3 a_jump = new Vector3(0, 9f, 0);
+            public float a_jump = 9f;
             public Vector3 v_jump = Vector3.zero;
+            public int l_jumpCount = 0;
+            public bool isInStasis = false;
         }
         public Physic physic = new Physic();
+
+        /*
+        public void CatchedByStasis() {
+            physic.isInStasis = true;
+            physic.l_jumpCount = 1;
+            physic.v_gravity = Vector3.zero;
+            physic.v_jump = Vector3.zero;
+        }
+
+        public void EjectFromStasis() {
+
+        }*/
+
+
+        public void OnStasisEnter() {
+            physic.isInStasis = true;
+            physic.l_jumpCount = 1;
+            physic.v_gravity = Vector3.zero;
+            physic.v_jump = Vector3.zero;
+        }
+        
+        public void OnStasisStay(Vector3 origin, float str = 1) {
+            Vector3 newPos = transform.position;
+            newPos = Vector3.MoveTowards(newPos, origin, str * Time.fixedDeltaTime);
+            transform.position = newPos;
+            physic.v_gravity = Vector3.zero;
+            physic.v_jump = Vector3.zero;
+        }
+
+        public void OnStasisExit() {
+            physic.isInStasis = false;
+            if (Input.GetKey(KeyCode.Space)) {
+                // Try jump
+                if (physic.l_jumpCount > 0) {
+                    // Adjust jump count
+                    physic.l_jumpCount -= 1;
+                    // Jump impulse
+                    physic.v_jump = transform.rotation * (physic.a_gravity.normalized * -physic.a_jump);
+                    // Reset gravity
+                    physic.v_gravity = Vector3.MoveTowards(physic.v_gravity, Vector3.zero, Vector3.Project(physic.v_gravity, physic.v_jump).magnitude);
+                }
+            }
+        }
 
         /** UNITY **/   
         // Constructor
         public void Awake() {
+            // Setup
+            physic.l_jumpCount = displacementConfiguration.jumpCount;
+            physic.a_gravity = displacementConfiguration.gravity;
+            physic.a_jump = displacementConfiguration.jumpStrength;
+
             // Debug
             ToogleCursor();
 
@@ -68,7 +132,10 @@ namespace Controller {
         }
 
         // Input Update
-        private void Update() { InputUpdate(); }
+        private void Update() {
+            InputUpdate();
+            //r.coreAbility.InputUpdate();
+        }
         private void InputUpdate() {
             /** DEBUG **/
             if(Input.GetKeyDown(KeyCode.Escape)) {
@@ -83,21 +150,25 @@ namespace Controller {
                 );
             physic.i_WR = Vector2.ClampMagnitude(physic.i_WR, 1f);
             // State
-            physic.i_WRState = !Input.GetKey(KeyCode.LeftShift);
+            physic.i_WRState = !    Input.GetKey(KeyCode.LeftShift);
 
             /** Retrieve jump input **/
-            if (Input.GetKeyDown(KeyCode.Space)) {
-                physic.v_jump = transform.rotation * physic.a_jump;
-                // Reset gravity
-                physic.v_gravity = Vector3.MoveTowards(physic.v_gravity, Vector3.zero, Vector3.Project(physic.v_gravity, physic.v_jump).magnitude);
-            }
+            if (!physic.isInStasis && Input.GetKeyDown(KeyCode.Space)) {
+                // Try jump
+                if (physic.l_jumpCount > 0) {
+                    // Adjust jump count
+                    physic.l_jumpCount -= 1;
+                    // Jump impulse
+                    physic.v_jump = transform.rotation * (physic.a_gravity.normalized * -physic.a_jump);
+                    // Reset gravity
+                    physic.v_gravity = Vector3.MoveTowards(physic.v_gravity, Vector3.zero, Vector3.Project(physic.v_gravity, physic.v_jump).magnitude);
+                }
+            }/*
             if (Input.GetKey(KeyCode.Space)) {
-                physic.v_jump += transform.rotation * physic.a_jump * Time.deltaTime;
-            }
+                physic.v_jump += transform.rotation * (physic.a_gravity.normalized * -physic.a_jump) * Time.deltaTime;
+            }*/
 
             /** Retrieve player camera inputs **/
-            GameObject camera = cameraConfiguration.target;
-            
             float rotationX = transform.localEulerAngles.y - physic.r_rotation.y + Input.GetAxis("Mouse X") * cameraConfiguration.sensitivityX;
 
             playerCamera.rotationY += Input.GetAxis("Mouse Y") * cameraConfiguration.sensitivityY;
@@ -178,8 +249,11 @@ namespace Controller {
 
             /** COLLISIONS **/
             if ((cf & CollisionFlags.CollidedBelow) != 0) {
+                // Reset gravity
                 physic.v_gravity = Vector3.zero;
+                // Reset jumpt
                 physic.v_jump = Vector3.zero;
+                physic.l_jumpCount = displacementConfiguration.jumpCount;
             }
             if ((cf & CollisionFlags.CollidedAbove) != 0) {
                 physic.v_jump = Vector3.zero;
@@ -194,10 +268,51 @@ namespace Controller {
                 Debug.LogWarningFormat("NoCameraAsociatedWithCharacter");
                 return;
             }
-            camera.transform.position = transform.position + transform.rotation * Quaternion.Euler(-playerCamera.rotationY, 0,0) * cameraConfiguration.offset;
-            //camera.transform.rotation = transform.localRotation;
-            //transform.localEulerAngles = new Vector3(0, rotationX, 0);
+            
+            
+            RaycastHit hit;
+            int mask = ~((1 << 8) | (1 << 9));
+            // Left
+            Vector3 leftTarget = transform.position + transform.rotation * Quaternion.Euler(-playerCamera.rotationY, 0, 0) * cameraConfiguration.offsetLeft;
+            Ray leftRay = new Ray(transform.position, leftTarget - transform.position);
+                Debug.DrawRay(leftRay.origin, leftTarget - transform.position, Color.red);
+            float leftLength = (leftTarget - transform.position).magnitude;
+            bool leftCollide;
+            if(leftCollide = Physics.Raycast(leftRay, out hit, leftLength, mask)) {
+                leftTarget = Vector3.MoveTowards(hit.point, transform.position, 0.5f);
+                leftLength = (leftTarget - transform.position).magnitude;
+            }
+            // Right
+            Vector3 rightTarget = transform.position + transform.rotation * Quaternion.Euler(-playerCamera.rotationY, 0, 0) * cameraConfiguration.offsetRight;
+            Ray rightRay = new Ray(transform.position, rightTarget - transform.position);
+                Debug.DrawRay(rightRay.origin, rightTarget - transform.position, Color.red);
+            float rightLength = (rightTarget - transform.position).magnitude;
+            bool rightCollide;
+            if (rightCollide = Physics.Raycast(rightRay, out hit, rightLength, mask)) {
+                rightTarget = Vector3.MoveTowards(hit.point, transform.position, 0.5f);
+                rightLength = (rightTarget - transform.position).magnitude;
+            }
+
+            // Compare
+            if(leftCollide || rightCollide) {
+                playerCamera.isOnRightSide = playerCamera.isOnRightSide ?
+                    rightLength * 1.5f > leftLength :
+                    rightLength * 0.5f > leftLength;
+            }
+
+            playerCamera.slider = playerCamera.isOnRightSide ?
+                Mathf.MoveTowards(playerCamera.slider, 1, Time.deltaTime * 3f) :
+                Mathf.MoveTowards(playerCamera.slider, 0, Time.deltaTime * 3f);
+
+            Vector3 target = Vector3.Lerp(
+                leftTarget,
+                rightTarget,
+                Mathf.SmoothStep(0, 1, playerCamera.slider)
+                );
+
+            camera.transform.position = target;
             camera.transform.localEulerAngles = new Vector3(-playerCamera.rotationY, 0, 0);
+            
         }
 
         /** DEBUG **/
